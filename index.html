@@ -1,104 +1,121 @@
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+<script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
 <script>
     document.addEventListener('alpine:init', () => {
-        Alpine.data('fileTransfer', () => ({
-            peerConnection: new RTCPeerConnection({
-                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-            }),
-            dataChannel: null,
-            receivedChunks: [],
-            fileReader: null,
-            CHUNK_SIZE: 64 * 1024, // 64KB chunks
-            offer: '',
-            offerInput: '',
-            answer: '',
-            answerInput: '',
+    Alpine.data('fileTransfer', () => ({
+        peer: null,  // The local PeerJS instance
+        conn: null,  // The data connection with the remote peer
+        receivedChunks: [],
+        fileReader: null,
+        CHUNK_SIZE: 64 * 1024, // 64KB chunks
+        offer: '',
+        offerInput: '',
+        answer: '',
+        answerInput: '',
 
-            // Create Offer
-            createOffer() {
-                this.dataChannel = this.peerConnection.createDataChannel("fileTransfer");
+        // Initialize PeerJS peer
+        initPeer() {
+            this.peer = new Peer({
+                host: 'peerjs.com',
+                port: 9000,
+                path: '/myapp',
+                secure: true
+            });
+
+            // PeerJS connection event
+            this.peer.on('open', id => {
+                console.log('Peer connection established with ID:', id);
+            });
+
+            // Handle incoming data connections
+            this.peer.on('connection', conn => {
+                this.conn = conn;
                 this.setupDataChannel();
+            });
+        },
 
-                this.peerConnection.createOffer()
-                    .then(offer => {
-                        this.peerConnection.setLocalDescription(offer);
-                        this.offer = JSON.stringify(offer);
-                    });
-            },
+        // Create Offer
+        createOffer() {
+            this.conn = this.peer.connect(this.offerInput);
+            this.setupDataChannel();
+        },
 
-            // Accept Offer
-            acceptOffer() {
-                const offer = JSON.parse(this.offerInput);
-                this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        // Accept Offer
+        acceptOffer() {
+            this.peer.call(this.offerInput, {
+                offerToReceiveAudio: 1,
+                offerToReceiveVideo: 1
+            }).then(call => {
+                call.on('stream', remoteStream => {
+                    // Handle the incoming stream if needed
+                });
+            });
 
-                this.peerConnection.createAnswer()
-                    .then(answer => {
-                        this.peerConnection.setLocalDescription(answer);
-                        this.answer = JSON.stringify(answer);
-                    });
-            },
+            this.peer.on('connection', conn => {
+                this.conn = conn;
+                this.setupDataChannel();
+            });
+        },
 
-            // Accept Answer
-            acceptAnswer() {
-                const answer = JSON.parse(this.answerInput);
-                this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            },
+        // Accept Answer
+        acceptAnswer() {
+            // In PeerJS, answering isn't exactly the same as using setRemoteDescription like WebRTC.
+            // This part of the logic might not be needed with PeerJS.
+            console.log("Answer received and accepted.");
+        },
 
-            // Setup Data Channel
-            setupDataChannel() {
-                this.dataChannel.onopen = () => console.log("Data Channel Opened");
+        // Setup Data Channel
+        setupDataChannel() {
+            this.conn.on('open', () => {
+                console.log("Data channel open");
+            });
 
-                this.dataChannel.onmessage = event => {
-                    if (event.data instanceof ArrayBuffer) {
-                        this.receivedChunks.push(event.data);
-                    } else if (event.data === "END_OF_FILE") {
-                        const blob = new Blob(this.receivedChunks);
-                        const a = document.createElement("a");
-                        a.href = URL.createObjectURL(blob);
-                        a.download = "received-file";
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        this.receivedChunks = [];
+            this.conn.on('data', data => {
+                if (data instanceof ArrayBuffer) {
+                    this.receivedChunks.push(data);
+                } else if (data === "END_OF_FILE") {
+                    const blob = new Blob(this.receivedChunks);
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = "received-file";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    this.receivedChunks = [];
+                }
+            });
+        },
+
+        // Send File in Chunks
+        sendFile(event) {
+            const file = event.target.files[0];
+            if (file && this.conn.open) {
+                let offset = 0;
+                this.fileReader = new FileReader();
+
+                this.fileReader.onload = () => {
+                    this.conn.send(this.fileReader.result);
+                    offset += this.CHUNK_SIZE;
+                    if (offset < file.size) {
+                        this.readSlice(offset);
+                    } else {
+                        this.conn.send("END_OF_FILE"); // Marker for file transfer completion
                     }
                 };
-            },
 
-            // Handle Incoming Data Channels
-            handleIncomingDataChannel(event) {
-                this.dataChannel = event.channel;
-                this.setupDataChannel();
-            },
-
-            // Send File in Chunks
-            sendFile(event) {
-                const file = event.target.files[0];
-                if (file && this.dataChannel.readyState === "open") {
-                    let offset = 0;
-                    this.fileReader = new FileReader();
-
-                    this.fileReader.onload = () => {
-                        this.dataChannel.send(this.fileReader.result);
-                        offset += this.CHUNK_SIZE;
-                        if (offset < file.size) {
-                            this.readSlice(offset);
-                        } else {
-                            this.dataChannel.send("END_OF_FILE"); // Marker for file transfer completion
-                        }
-                    };
-
-                    this.readSlice(0);
-                }
-            },
-
-            // Read file slice
-            readSlice(offset) {
-                const slice = file.slice(offset, offset + this.CHUNK_SIZE);
-                this.fileReader.readAsArrayBuffer(slice);
+                this.readSlice(0);
             }
-        }));
-    });
+        },
+
+        // Read file slice
+        readSlice(offset) {
+            const slice = file.slice(offset, offset + this.CHUNK_SIZE);
+            this.fileReader.readAsArrayBuffer(slice);
+        }
+    }));
+});
+
 </script>
 
 <div x-data="fileTransfer()">
