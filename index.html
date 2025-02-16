@@ -1,1 +1,122 @@
-test
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('fileTransfer', () => ({
+            peerConnection: new RTCPeerConnection({
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            }),
+            dataChannel: null,
+            receivedChunks: [],
+            fileReader: null,
+            CHUNK_SIZE: 64 * 1024, // 64KB chunks
+            offer: '',
+            offerInput: '',
+            answer: '',
+            answerInput: '',
+
+            // Create Offer
+            createOffer() {
+                this.dataChannel = this.peerConnection.createDataChannel("fileTransfer");
+                this.setupDataChannel();
+
+                this.peerConnection.createOffer()
+                    .then(offer => {
+                        this.peerConnection.setLocalDescription(offer);
+                        this.offer = JSON.stringify(offer);
+                    });
+            },
+
+            // Accept Offer
+            acceptOffer() {
+                const offer = JSON.parse(this.offerInput);
+                this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+                this.peerConnection.createAnswer()
+                    .then(answer => {
+                        this.peerConnection.setLocalDescription(answer);
+                        this.answer = JSON.stringify(answer);
+                    });
+            },
+
+            // Accept Answer
+            acceptAnswer() {
+                const answer = JSON.parse(this.answerInput);
+                this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            },
+
+            // Setup Data Channel
+            setupDataChannel() {
+                this.dataChannel.onopen = () => console.log("Data Channel Opened");
+
+                this.dataChannel.onmessage = event => {
+                    if (event.data instanceof ArrayBuffer) {
+                        this.receivedChunks.push(event.data);
+                    } else if (event.data === "END_OF_FILE") {
+                        const blob = new Blob(this.receivedChunks);
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = "received-file";
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        this.receivedChunks = [];
+                    }
+                };
+            },
+
+            // Handle Incoming Data Channels
+            handleIncomingDataChannel(event) {
+                this.dataChannel = event.channel;
+                this.setupDataChannel();
+            },
+
+            // Send File in Chunks
+            sendFile(event) {
+                const file = event.target.files[0];
+                if (file && this.dataChannel.readyState === "open") {
+                    let offset = 0;
+                    this.fileReader = new FileReader();
+
+                    this.fileReader.onload = () => {
+                        this.dataChannel.send(this.fileReader.result);
+                        offset += this.CHUNK_SIZE;
+                        if (offset < file.size) {
+                            this.readSlice(offset);
+                        } else {
+                            this.dataChannel.send("END_OF_FILE"); // Marker for file transfer completion
+                        }
+                    };
+
+                    this.readSlice(0);
+                }
+            },
+
+            // Read file slice
+            readSlice(offset) {
+                const slice = file.slice(offset, offset + this.CHUNK_SIZE);
+                this.fileReader.readAsArrayBuffer(slice);
+            }
+        }));
+    });
+</script>
+
+<div x-data="fileTransfer()">
+    <!-- Offer Controls -->
+    <button id="create-offer" @click="createOffer">Create Offer</button>
+    <textarea id="offer" x-model="offer"></textarea>
+
+    <!-- Accept Offer -->
+    <input id="offer-input" x-model="offerInput" />
+    <button @click="acceptOffer">Accept Offer</button>
+
+    <!-- Answer Controls -->
+    <textarea id="answer" x-model="answer"></textarea>
+
+    <!-- Accept Answer -->
+    <input id="answer-input" x-model="answerInput" />
+    <button @click="acceptAnswer">Accept Answer</button>
+
+    <!-- File Upload -->
+    <input type="file" id="send-file" @change="sendFile" />
+</div>
