@@ -23,7 +23,7 @@
                 this.peerConnection.createOffer()
                     .then(offer => {
                         this.peerConnection.setLocalDescription(offer).then(() => {
-                            this.offer = JSON.stringify(peerConnection.localDescription);
+                            this.offer = JSON.stringify(this.peerConnection.localDescription);
                         });
                     });
             },
