@@ -1,123 +1,63 @@
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+<html>
+  <body x-data="peerConnection()">
+    <style>
+      #outgoing {
+        width: 600px;
+        word-wrap: break-word;
+        white-space: normal;
+      }
+    </style>
 
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('fileTransfer', () => ({
-            peerConnection: new RTCPeerConnection({
-                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-            }),
-            dataChannel: null,
-            receivedChunks: [],
-            fileReader: null,
-            CHUNK_SIZE: 64 * 1024, // 64KB chunks
-            offer: '',
-            offerInput: '',
-            answer: '',
-            answerInput: '',
+    <form @submit.prevent="submitSignal">
+      <textarea x-model="incomingSignal"></textarea>
+      <button type="submit">Submit</button>
+    </form>
 
-            // Create Offer
-            createOffer() {
-                this.dataChannel = this.peerConnection.createDataChannel("fileTransfer");
-                this.setupDataChannel();
+    <pre id="outgoing" x-text="outgoingSignal"></pre>
 
-                this.peerConnection.createOffer()
-                    .then(offer => {
-                        this.peerConnection.setLocalDescription(offer).then(() => {
-                            this.offer = JSON.stringify(this.peerConnection.localDescription);
-                        });
-                    });
-            },
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.8/cdn.js" integrity="sha512-9pBoQWH5nbYAzoNQy3KkxHn6UDIEfuz7VGPb++0kkcPHaYbe/Obfbd1F2dNbJ1lfuAPQ52Y3Lw1QFO3za2Bxug==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js" integrity="sha512-0f7Ahsuvr+/P2btTY4mZIw9Vl23lS6LY/Y7amdkmUg2dqsUF+cTe4QjWvj/NIBHJoGksOiqndKQuI9yzn2hB0g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <script>
+      function peerConnection() {
+        return {
+          incomingSignal: '',
+          outgoingSignal: '',
+          peer: null,
 
-            // Accept Offer
-            acceptOffer() {
-                const offer = JSON.parse(this.offerInput);
-                this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+          init() {
+            this.peer = new SimplePeer({
+              initiator: location.hash === '#1',
+              trickle: false
+            });
 
-                this.peerConnection.createAnswer()
-                    .then(answer => {
-                        this.peerConnection.setLocalDescription(answer);
-                        this.answer = JSON.stringify(answer);
-                    });
-            },
+            this.peer.on('error', (err) => console.log('error', err));
 
-            // Accept Answer
-            acceptAnswer() {
-                const answer = JSON.parse(this.answerInput);
-                this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            },
+            this.peer.on('signal', (data) => {
+              console.log('SIGNAL', JSON.stringify(data));
+              this.outgoingSignal = JSON.stringify(data);
+            });
 
-            // Setup Data Channel
-            setupDataChannel() {
-                this.dataChannel.onopen = () => console.log("Data Channel Opened");
+            this.peer.on('connect', () => {
+              console.log('CONNECT');
+              this.peer.send('whatever' + Math.random());
+            });
 
-                this.dataChannel.onmessage = event => {
-                    if (event.data instanceof ArrayBuffer) {
-                        this.receivedChunks.push(event.data);
-                    } else if (event.data === "END_OF_FILE") {
-                        const blob = new Blob(this.receivedChunks);
-                        const a = document.createElement("a");
-                        a.href = URL.createObjectURL(blob);
-                        a.download = "received-file";
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        this.receivedChunks = [];
-                    }
-                };
-            },
+            this.peer.on('data', (data) => {
+              console.log('data: ' + data);
+            });
+          },
 
-            // Handle Incoming Data Channels
-            handleIncomingDataChannel(event) {
-                this.dataChannel = event.channel;
-                this.setupDataChannel();
-            },
-
-            // Send File in Chunks
-            sendFile(event) {
-                const file = event.target.files[0];
-                if (file && this.dataChannel.readyState === "open") {
-                    let offset = 0;
-                    this.fileReader = new FileReader();
-
-                    this.fileReader.onload = () => {
-                        this.dataChannel.send(this.fileReader.result);
-                        offset += this.CHUNK_SIZE;
-                        if (offset < file.size) {
-                            this.readSlice(offset);
-                        } else {
-                            this.dataChannel.send("END_OF_FILE"); // Marker for file transfer completion
-                        }
-                    };
-
-                    this.readSlice(0);
-                }
-            },
-
-            // Read file slice
-            readSlice(offset) {
-                const slice = file.slice(offset, offset + this.CHUNK_SIZE);
-                this.fileReader.readAsArrayBuffer(slice);
+          submitSignal() {
+            try {
+              const signalData = JSON.parse(this.incomingSignal);
+              this.peer.signal(signalData);
+            } catch (e) {
+              console.error('Invalid signal data', e);
             }
-        }));
-    });
-</script>
-
-<div x-data="fileTransfer()">
-    <!-- Offer Controls -->
-    <button id="create-offer" @click="createOffer">Create Offer</button>
-    <textarea id="offer" x-model="offer"></textarea>
-
-    <!-- Accept Offer -->
-    <input id="offer-input" x-model="offerInput" />
-    <button @click="acceptOffer">Accept Offer</button>
-
-    <!-- Answer Controls -->
-    <textarea id="answer" x-model="answer"></textarea>
-
-    <!-- Accept Answer -->
-    <input id="answer-input" x-model="answerInput" />
-    <button @click="acceptAnswer">Accept Answer</button>
-
-    <!-- File Upload -->
-    <input type="file" id="send-file" @change="sendFile" />
-</div>
+          }
+        };
+      }
+    </script>
+  </body>
+</html>
