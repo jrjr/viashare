@@ -1,6 +1,4 @@
 <html>
-  
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.8/cdn.js" integrity="sha512-9pBoQWH5nbYAzoNQy3KkxHn6UDIEfuz7VGPb++0kkcPHaYbe/Obfbd1F2dNbJ1lfuAPQ52Y3Lw1QFO3za2Bxug==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js" integrity="sha512-0f7Ahsuvr+/P2btTY4mZIw9Vl23lS6LY/Y7amdkmUg2dqsUF+cTe4QjWvj/NIBHJoGksOiqndKQuI9yzn2hB0g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     
@@ -9,15 +7,47 @@
         return {
           incomingSignal: '',
           outgoingSignal: '',
+          logMessages: '',
           peer: null,
 
           init() {
+            const originalLog = console.log;
+            const originalError = console.error;
+            const originalWarn = console.warn;
+            const originalInfo = console.info;
+
+            // Override console.log
+            console.log = (...args) => {
+              this.logMessages += 'LOG: ' + args.join(' ') + '\n';
+              originalLog.apply(console, args);  // Ensure the original log method is called
+            };
+
+            // Override console.error
+            console.error = (...args) => {
+              this.logMessages += 'ERROR: ' + args.join(' ') + '\n';
+              originalError.apply(console, args);  // Ensure the original error method is called
+            };
+
+            // Override console.warn
+            console.warn = (...args) => {
+              this.logMessages += 'WARN: ' + args.join(' ') + '\n';
+              originalWarn.apply(console, args);  // Ensure the original warn method is called
+            };
+
+            // Override console.info
+            console.info = (...args) => {
+              this.logMessages += 'INFO: ' + args.join(' ') + '\n';
+              originalInfo.apply(console, args);  // Ensure the original info method is called
+            };
+
             this.peer = new SimplePeer({
               initiator: location.hash === '#1',
               trickle: false
             });
 
-            this.peer.on('error', (err) => console.log('error', err));
+            this.peer.on('error', (err) => {
+              console.log('error', err); 
+            });
 
             this.peer.on('signal', (data) => {
               console.log('SIGNAL', JSON.stringify(data));
@@ -46,20 +76,22 @@
       }
     </script>
 
-    <body x-data="peerConnection()">
+    <body x-data="peerConnection()" x-init="init()">
         <style>
-        #outgoing {
+          #outgoing {
             width: 600px;
             word-wrap: break-word;
             white-space: normal;
-        }
+          }
         </style>
 
         <form @submit.prevent="submitSignal">
-        <textarea x-model="incomingSignal"></textarea>
-        <button type="submit">Submit</button>
+          <textarea x-model="incomingSignal"></textarea>
+          <button type="submit">Submit</button>
         </form>
 
         <pre id="outgoing" x-text="outgoingSignal"></pre>
+        <textarea x-model="logMessages" readonly></textarea>
     </body>
 </html>
+
