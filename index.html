@@ -1,13 +1,15 @@
 <html>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.8/cdn.js" integrity="sha512-9pBoQWH5nbYAzoNQy3KkxHn6UDIEfuz7VGPb++0kkcPHaYbe/Obfbd1F2dNbJ1lfuAPQ52Y3Lw1QFO3za2Bxug==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js" integrity="sha512-0f7Ahsuvr+/P2btTY4mZIw9Vl23lS6LY/Y7amdkmUg2dqsUF+cTe4QjWvj/NIBHJoGksOiqndKQuI9yzn2hB0g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  
     <script>
       function peerConnection() {
         return {
           incomingSignal: '',
           outgoingSignal: '',
           logMessages: '',
+          qr: null,
           peer: null,
 
           init() {
@@ -52,7 +54,13 @@
             this.peer.on('signal', (data) => {
               console.log('SIGNAL', JSON.stringify(data));
               this.outgoingSignal = JSON.stringify(data);
-            });
+              if (this.qr) {
+                this.qr.clear();
+              } 
+                          
+                this.qr = new QRCode(document.getElementById("qrcode"), {text: JSON.stringify(data)});
+                
+              });
 
             this.peer.on('connect', () => {
               console.log('CONNECT');
@@ -92,6 +100,8 @@
 
         <pre id="outgoing" x-text="outgoingSignal"></pre>
         <textarea x-model="logMessages" readonly></textarea>
+        <div id="qrcode" style="width:256px; height:256px; margin-top:15px;"></div>
+        
     </body>
 </html>
 
